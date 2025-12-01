@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TfL Weekly Cost Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Custom scrollbar for aesthetic purposes */
+        #journey-log::-webkit-scrollbar {
+            width: 6px;
+        }
+        #journey-log::-webkit-scrollbar-thumb {
+            background-color: #6366f1;
+            border-radius: 3px;
+        }
+        .peak-fare { color: #dc2626; font-weight: 600; }
+        .offpeak-fare { color: #16a34a; font-weight: 600; }
+        /* Winner/Loser styles */
+        .comparison-card-winner { border-color: #10b981; background-color: #e6fff5; }
+        .comparison-card-loser { border-color: #f87171; background-color: #fef2f2; }
+        /* Toggle switch styling */
+        .dot {
+            transition: transform 0.3s ease-in-out, background-color 0.3s ease-in-out;
+        }
+        input:checked ~ .dot {
+            transform: translateX(100%);
+            background-color: #4f46e5;
+        }
+        input:checked ~ .block {
+            background-color: #a5b4fc;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .regular-button {
+            transition: transform 0.1s ease;
+        }
+        .regular-button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 md:p-8">
+        <div id="loading-indicator" class="flex justify-center items-center p-8 bg-white" style="display: none;">
+            <div class="loading-spinner mr-3"></div>
+            <p class="text-lg text-gray-600">Loading data...</p>
+        </div>
+        <div id="app-content" style="display: none;">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2 border-b pb-2">
+                TfL Weekly Cost Tracker
+            </h1>
+            
+            <!-- 1. WEEKLY SUMMARY -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <!-- PAYG Total -->
+                <div id="payg-card" class="border-2 border-dashed border-gray-300 p-4 rounded-lg shadow-md">
+                    <p class="text-sm text-gray-600 font-semibold">Total PAYG Spend (Capped)</p>
+                    <p id="payg-total" class="text-4xl font-extrabold text-indigo-600 mt-1">£0.00</p>
+                </div>
+                <!-- Travelcard Cost -->
+                <div id="travelcard-card" class="border-2 p-4 rounded-lg shadow-md transition duration-300">
+                    <p class="text-sm text-gray-600 font-semibold">7-Day Z1-3 Travelcard Cost <span id="travelcard-discount-label" class="text-green-600 font-bold"></span></p>
+                    <p id="travelcard-cost" class="text-4xl font-extrabold text-gray-800 mt-1">£52.50</p>
+                </div>
+                <!-- Comparison Result -->
+                <div id="comparison-result" class="p-4 rounded-lg border-2 font-semibold transition duration-300 flex items-center justify-center text-center text-gray-700 md:col-span-1 col-span-3">
+                    Start tracking to compare costs!
+                </div>
+            </div>
+
+            <!-- 2. REGULAR JOURNEYS -->
+            <div class="mb-8 p-4 border rounded-xl shadow-sm bg-gray-50">
+                <h2 class="text-xl font-semibold text-gray-700 mb-3 flex items-center justify-between">
+                    Regular Journeys: Quick Add
+                    <select id="regular-day-input" required class="p-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="">-- Select Day --</option>
+                    </select>
+                </h2>
+                <div id="regular-journeys-container" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <!-- Regular Journey Buttons will be rendered here by JS -->
+                </div>
+            </div>
+            
+            <!-- 3. CUSTOM JOURNEYS -->
+            <div class="mb-8 p-4 border rounded-xl shadow-sm">
+                <h2 class="text-xl font-semibold text-gray-700 mb-3">Custom Journey: Add Specific Route</h2>
+                <form id="custom-journey-form" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                    
+                    <select id="custom-day-input" required class="col-span-2 md:col-span-1 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">-- Select Day --</option>
+                    </select>
+
+                    <div class="col-span-2 md:col-span-2 grid grid-cols-2 gap-2">
+                         <input type="number" id="custom-start-zone" value="" min="1" max="9" required class="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="Start Zone (e.g., 3)">
+                         <input type="number" id="custom-end-zone" value="" min="1" max="9" required class="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="End Zone (e.g., 1)">
+                    </div>
+
+                    <select id="custom-time-input" required class="col-span-2 md:col-span-1 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="PEAK">Peak</option>
+                        <option value="OFFPEAK">Off-Peak</option>
+                    </select>
+                    
+                    <input type="number" id="custom-count-input" value="1" min="1" required class="col-span-2 md:col-span-1 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" placeholder="Quantity">
+
+                    <button type="submit" class="col-span-2 md:col-span-1 bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition duration-150">
+                        Add Custom
+                    </button>
+                    <div id="custom-fare-guide" class="md:col-span-5 text-sm text-gray-500 col-span-4 mt-2">
+                        Enter zones to calculate the corresponding PAYG fare.
+                    </div>
+                </form>
+            </div>
+
+
+            <!-- 4. JOURNEY LOG -->
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Journey Log</h2>
+            <div id="journey-log" class="space-y-4 h-96 overflow-y-auto pr-2 mb-8 border-t pt-4">
+                <p class="text-gray-500 text-center py-8">No journeys logged yet.</p>
+            </div>
+
+            <!-- 5. SETTINGS SECTION -->
+             <div class="p-6 border-t-4 border-indigo-100 bg-gray-50 rounded-xl">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Settings & Discounts</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Discount Toggles -->
+                    <div class="space-y-4">
+                         <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
+                            <label for="student-discount-toggle" class="flex items-center cursor-pointer">
+                                <div class="relative">
+                                    <input type="checkbox" id="student-discount-toggle" class="sr-only">
+                                    <div class="block bg-gray-300 w-14 h-8 rounded-full"></div>
+                                    <div class="dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full"></div>
+                                </div>
+                                <div class="ml-3 text-gray-700 font-medium text-sm">
+                                    18+ Student Travelcard (30% off Pass: <strong>£36.70</strong>)
+                                </div>
+                            </label>
+                            <span id="travelcard-discount-status" class="text-xs font-medium text-red-600">Off</span>
+                        </div>
+
+                        <div class="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border">
+                            <label for="railcard-payg-toggle" class="flex items-center cursor-pointer">
+                                <div class="relative">
+                                    <input type="checkbox" id="railcard-payg-toggle" class="sr-only">
+                                    <div class="block bg-gray-300 w-14 h-8 rounded-full"></div>
+                                    <div class="dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full"></div>
+                                </div>
+                                <div class="ml-3 text-gray-700 font-medium text-sm">
+                                    Railcard Linked to Oyster (1/3 off Off-Peak PAYG)
+                                </div>
+                            </label>
+                            <span id="payg-discount-status" class="text-xs font-medium text-red-600">Off</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Journey Management Buttons -->
+                    <div class="bg-white p-4 rounded-lg shadow-sm border space-y-3">
+                         <button onclick="saveWeekAndReset()" class="w-full bg-indigo-600 text-white font-semibold py-2 rounded-lg hover:bg-indigo-700 transition duration-150 text-sm">
+                            Save Week & Start New Log
+                        </button>
+                        <button onclick="clearAllJourneys()" class="w-full bg-red-100 text-red-600 font-semibold py-2 rounded-lg hover:bg-red-200 transition duration-150 text-sm">
+                            Clear All Journeys This Week
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. HISTORY SECTION -->
+            <div class="mt-8 p-6 border-t-2 border-gray-300">
+                <h2 class="text-xl font-bold text-gray-700 mb-3">Weekly Cost History</h2>
+                <div id="history-log" class="space-y-3">
+                    <p class="text-gray-500 text-sm text-center">No past weeks saved yet.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</body>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, query, getDocs, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Global store for journeys (Monday to Sunday)
+        let journeys = {
+            Monday: [], Tuesday: [], Wednesday: [], Thursday: [],
+            Friday: [], Saturday: [], Sunday: []
+        };
+        
+        // --- FIREBASE SETUP ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        let db;
+        let auth;
+        let userId = null;
+        let currentWeekDocRef = null;
+        let historyDocRef = null; // Document to store history array
+
+        document.getElementById('loading-indicator').style.display = 'flex';
+        document.getElementById('app-content').style.display = 'none';
+
+        function getCurrentWeekDocRef(uid) {
+            // Private user data path for the current week
+            return doc(db, `artifacts/${appId}/users/${uid}/journey_tracker`, 'current_week');
+        }
+
+        function getHistoryDocRef(uid) {
+            // Private user data path for the history array
+            return doc(db, `artifacts/${appId}/users/${uid}/journey_tracker`, 'weekly_history');
+        }
+
+
+        async function initializeAppAndAuth() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                const authPromise = new Promise(resolve => {
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            currentWeekDocRef = getCurrentWeekDocRef(userId);
+                            historyDocRef = getHistoryDocRef(userId);
+                            await loadData();
+                        } else {
+                            try {
+                                if (typeof __initial_auth_token !== 'undefined') {
+                                    await signInWithCustomToken(auth, __initial_auth_token);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            } catch (e) {
+                                console.error("Firebase sign-in failed:", e);
+                            }
+                        }
+                        resolve();
+                    });
+                });
+                await authPromise;
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                document.getElementById('loading-indicator').style.display = 'none';
+                document.getElementById('app-content').style.display = 'block';
+            }
+        }
+
+        // --- DATA MANAGEMENT ---
+
+        async function loadData() {
+            if (!currentWeekDocRef) return;
+            
+            try {
+                // 1. Load Current Week Data
+                const currentWeekSnap = await getDoc(currentWeekDocRef);
+                if (currentWeekSnap.exists()) {
+                    const savedData = currentWeekSnap.data();
+                    
+                    if (savedData.journeys) {
+                        for (const day in journeys) {
+                            if (savedData.journeys[day]) {
+                                journeys[day] = savedData.journeys[day];
+                            }
+                        }
+                    }
+
+                    if (typeof savedData.studentDiscount !== 'undefined') {
+                        document.getElementById('student-discount-toggle').checked = savedData.studentDiscount;
+                    }
+                    if (typeof savedData.railcardPayg !== 'undefined') {
+                        document.getElementById('railcard-payg-toggle').checked = savedData.railcardPayg;
+                    }
+                }
+
+                // 2. Load History Data (synchronous read)
+                await renderHistory();
+
+            } catch (e) {
+                console.error("Error loading data from Firestore:", e);
+            } finally {
+                recalculateAll(); 
+                document.getElementById('loading-indicator').style.display = 'none';
+                document.getElementById('app-content').style.display = 'block';
+            }
+        }
+        
+        async function saveJourneys() {
+            if (!currentWeekDocRef) return;
+            const dataToSave = {
+                journeys: journeys,
+                studentDiscount: document.getElementById('student-discount-toggle').checked,
+                railcardPayg: document.getElementById('railcard-payg-toggle').checked,
+                lastUpdated: new Date()
+            };
+            try {
+                await setDoc(currentWeekDocRef, dataToSave);
+            } catch (e) {
+                console.error("Error saving current week to Firestore:", e);
+            }
+        }
+
+        // --- HISTORY MANAGEMENT ---
+
+        async function renderHistory() {
+             const historyElement = document.getElementById('history-log');
+             historyElement.innerHTML = '';
+
+             const historySnap = await getDoc(historyDocRef);
+             let historyData = [];
+
+             if (historySnap.exists() && historySnap.data().history) {
+                 // Sort history by date descending
+                 historyData = historySnap.data().history.sort((a, b) => b.savedDate.toDate() - a.savedDate.toDate());
+             }
+
+             if (historyData.length === 0) {
+                 historyElement.innerHTML = '<p class="text-gray-500 text-sm text-center">No past weeks saved yet.</p>';
+                 return;
+             }
+
+             historyData.forEach(week => {
+                 const date = week.savedDate.toDate().toLocaleDateString();
+                 const winnerClass = week.paygTotal <= week.travelcardCost ? 'text-green-600' : 'text-red-600';
+                 const winnerLabel = week.paygTotal <= week.travelcardCost ? 'PAYG WON' : 'PASS WON';
+                 const discountText = week.isStudentTravelcard ? ' (Student Pass)' : '';
+
+                 const historyItem = document.createElement('div');
+                 historyItem.className = 'flex justify-between items-center p-3 bg-white border rounded-lg shadow-sm';
+                 historyItem.innerHTML = `
+                     <span class="text-sm font-medium text-gray-700">Week saved: ${date}${discountText}</span>
+                     <div class="text-right">
+                         <span class="text-xs font-semibold mr-2 ${winnerClass}">${winnerLabel}</span>
+                         <span class="text-sm font-bold text-gray-800">£${week.paygTotal.toFixed(2)} / £${week.travelcardCost.toFixed(2)}</span>
+                     </div>
+                 `;
+                 historyElement.appendChild(historyItem);
+             });
+        }
+
+        async function saveWeekAndReset() {
+            const isStudentTravelcard = document.getElementById('student-discount-toggle').checked;
+            const standardTravelcardCost = CAPS.WEEKLY_CAP_ADULT;
+            const effectiveTravelcardCost = isStudentTravelcard ? CAPS.WEEKLY_CAP_STUDENT_DISCOUNTED : standardTravelcardCost;
+
+            let currentTotal = 0;
+            const weeklyTubeCap = CAPS.WEEKLY_CAP_ADULT;
+            let cumulativeTube = 0;
+            let cumulativeBus = 0;
+
+            // 1. Calculate the final current week total
+            Object.keys(journeys).forEach(day => {
+                const costs = calculateDailyCosts(day);
+                cumulativeTube += costs.tubeCapped;
+                cumulativeBus += costs.busCapped;
+            });
+            
+            currentTotal = Math.min(cumulativeTube, weeklyTubeCap) + cumulativeBus;
+            
+            if (currentTotal === 0) {
+                 alert("Cannot save an empty week. Please log some journeys first.");
+                 return;
+            }
+
+            // Using window.confirm for simplicity since the last attempt with a custom modal was complex
+            const confirmation = window.confirm(`Save this week's total of £${currentTotal.toFixed(2)} to history and clear the current log?`);
+            if (!confirmation) return;
+
+            // 2. Prepare history entry
+            const historyEntry = {
+                savedDate: new Date(),
+                paygTotal: currentTotal,
+                travelcardCost: effectiveTravelcardCost,
+                isStudentTravelcard: isStudentTravelcard
+            };
+
+            try {
+                // 3. Save to history array (create doc if it doesn't exist)
+                await setDoc(historyDocRef, { history: arrayUnion(historyEntry) }, { merge: true });
+
+                // 4. Reset current week log
+                clearAllJourneys(false); // Clear locally without confirmation
+                await saveJourneys(); // Save empty log
+                
+                // 5. Re-render history and UI
+                await renderHistory();
+                recalculateAll();
+
+            } catch (e) {
+                console.error("Error saving weekly history:", e);
+                alert("Failed to save history. Check console for details.");
+            }
+        }
+        window.saveWeekAndReset = saveWeekAndReset; // Expose globally for inline onclick
+
+        // --- FARE CONSTANTS (Comprehensive March 2025 PAYG Rates) ---
+        // Key format: 'Z_minZone_maxZone' or 'Z1_maxZone'
+        const PAYG_FARES_TABLE = {
+            // Fares including Zone 1
+            'Z1_1':    { peak: 2.90, offpeak: 2.80, offpeak_discounted: 1.85 },
+            'Z1_2':    { peak: 3.50, offpeak: 2.90, offpeak_discounted: 1.90 },
+            'Z1_3':    { peak: 3.80, offpeak: 3.10, offpeak_discounted: 2.05 },
+            'Z1_4':    { peak: 4.60, offpeak: 3.40, offpeak_discounted: 2.25 },
+            'Z1_5':    { peak: 5.20, offpeak: 3.60, offpeak_discounted: 2.40 },
+            'Z1_6':    { peak: 5.80, offpeak: 3.80, offpeak_discounted: 2.50 },
+            
+            // Fares excluding Zone 1
+            'Z2_2':    { peak: 2.10, offpeak: 2.00, offpeak_discounted: 1.30 },
+            'Z2_3':    { peak: 2.30, offpeak: 2.10, offpeak_discounted: 1.40 },
+            'Z2_4':    { peak: 3.00, offpeak: 2.20, offpeak_discounted: 1.45 },
+            'Z2_5':    { peak: 3.20, offpeak: 2.30, offpeak_discounted: 1.50 },
+            'Z2_6':    { peak: 3.60, offpeak: 2.40, offpeak_discounted: 1.60 },
+
+            'Z3_3':    { peak: 2.10, offpeak: 2.00, offpeak_discounted: 1.30 },
+            'Z3_4':    { peak: 2.30, offpeak: 2.10, offpeak_discounted: 1.40 },
+            'Z3_5':    { peak: 3.00, offpeak: 2.20, offpeak_discounted: 1.45 },
+            'Z3_6':    { peak: 3.20, offpeak: 2.30, offpeak_discounted: 1.50 },
+
+            'Z4_4':    { peak: 2.10, offpeak: 2.00, offpeak_discounted: 1.30 },
+            'Z4_5':    { peak: 2.30, offpeak: 2.10, offpeak_discounted: 1.40 },
+            'Z4_6':    { peak: 3.00, offpeak: 2.20, offpeak_discounted: 1.45 },
+
+            'Z5_5':    { peak: 2.10, offpeak: 2.00, offpeak_discounted: 1.30 },
+            'Z5_6':    { peak: 2.30, offpeak: 2.10, offpeak_discounted: 1.40 },
+            
+            'Z6_6':    { peak: 2.10, offpeak: 2.00, offpeak_discounted: 1.30 },
+            
+            'BUS':     { peak: 1.75, offpeak: 1.75, offpeak_discounted: 1.75 } 
+        };
+
+        const CAPS = {
+            TUBE_DAILY_CAP: 10.50,
+            BUS_DAILY_CAP: 5.25,
+            WEEKLY_CAP_ADULT: 52.50,
+            WEEKLY_CAP_STUDENT_DISCOUNTED: 36.70, 
+        };
+
+        // --- CORE FARE CALCULATION LOGIC ---
+
+        function getFare(route, time) {
+            // This function is for the quick-add buttons which are hardcoded Z1-3 scenarios
+            if (route === 'BUS') return PAYG_FARES_TABLE.BUS[time.toLowerCase()];
+            
+            let fareKey;
+            if (route === 'TUBE_Z1-3') {
+                 fareKey = 'Z1_3';
+            } else if (route === 'TUBE_Z3') {
+                 fareKey = 'Z3_3';
+            } else {
+                return PAYG_FARES_TABLE.Z1_6.peak; // Fallback
+            }
+
+            const isPeak = time === 'PEAK';
+            const isRailcardPayg = document.getElementById('railcard-payg-toggle').checked;
+            const fareData = PAYG_FARES_TABLE[fareKey];
+
+            if (fareData) {
+                if (isPeak) return fareData.peak;
+                return isRailcardPayg ? fareData.offpeak_discounted : fareData.offpeak;
+            }
+            return PAYG_FARES_TABLE.Z1_6.peak; // Default fallback
+        }
+
+        function calculateCustomFare(startZone, endZone, time) {
+            const minZone = Math.min(startZone, endZone);
+            const maxZone = Math.max(startZone, endZone);
+            const isPeak = time === 'PEAK';
+            const isRailcardPayg = document.getElementById('railcard-payg-toggle').checked;
+            
+            let fareKey;
+            
+            if (maxZone > 9) return PAYG_FARES_TABLE.Z1_6.peak; // Out of bounds safety
+            
+            if (minZone === 1) {
+                // Zone 1 inclusive journey (Z1-X)
+                fareKey = `Z1_${maxZone}`;
+            } else {
+                // Zone 1 exclusive journey (Z2-X, Z3-X, etc.)
+                fareKey = `Z${minZone}_${maxZone}`;
+            }
+
+            const fareData = PAYG_FARES_TABLE[fareKey];
+
+            if (fareData) {
+                if (isPeak) return fareData.peak;
+                return isRailcardPayg ? fareData.offpeak_discounted : fareData.offpeak;
+            }
+            
+            // If specific fare not found (e.g., Z7, Z8, Z9 not fully listed above), default to Z1-6 rates for estimation
+            return PAYG_FARES_TABLE.Z1_6.peak; 
+        }
+
+        function calculateDailyCosts(day) {
+            const dayJourneys = journeys[day];
+            let tubeRailSum = 0;
+            let busSum = 0;
+
+            dayJourneys.forEach(j => {
+                let fare;
+                if (j.type === 'CUSTOM') {
+                    fare = calculateCustomFare(parseInt(j.startZone), parseInt(j.endZone), j.time);
+                } else {
+                    // Regular journeys use the simplified getFare function
+                    fare = getFare(j.route, j.time);
+                }
+                
+                fare = parseFloat(fare.toFixed(2));
+
+                if (j.route === 'BUS') {
+                    busSum += fare * j.count;
+                } else {
+                    tubeRailSum += fare * j.count;
+                }
+            });
+
+            const dailyTubeCap = CAPS.TUBE_DAILY_CAP;
+            const tubeCapped = tubeRailSum > dailyTubeCap ? dailyTubeCap : tubeRailSum;
+            const busCapped = busSum > CAPS.BUS_DAILY_CAP ? CAPS.BUS_DAILY_CAP : busSum;
+
+            return {
+                tubeCapped,
+                busCapped,
+                tubeSum: tubeRailSum,
+                busSum: busSum
+            };
+        }
+
+        // --- RENDER FUNCTIONS ---
+
+        const regularJourneys = [
+            { route: 'TUBE_Z1-3', label: 'Z3 ↔ Z1/2 Return', description: 'East Ham to Central London' },
+            { route: 'TUBE_Z3', label: 'Z3 ↔ Z3 Local', description: 'East Ham to Upton Park/Barking' },
+            { route: 'BUS', label: 'Bus/Tram', description: 'Any Bus Journey (Hopper applies)' },
+        ];
+        
+        function renderRegularJourneys() {
+            const container = document.getElementById('regular-journeys-container');
+            container.innerHTML = '';
+
+            // Get selected day from the new dropdown
+            const selectedDay = document.getElementById('regular-day-input').value;
+            
+            regularJourneys.forEach(j => {
+                const isBus = j.route === 'BUS';
+                const farePeak = getFare(j.route, 'PEAK').toFixed(2);
+                const fareOffPeak = isBus ? farePeak : getFare(j.route, 'OFFPEAK').toFixed(2);
+                
+                const card = document.createElement('div');
+                card.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200';
+                card.innerHTML = `
+                    <h3 class="font-bold text-gray-700">${j.label}</h3>
+                    <p class="text-xs text-gray-500 mb-3">${j.description}</p>
+                    <div class="flex space-x-2">
+                        ${isBus ? 
+                            `<button data-route="${j.route}" data-time="PEAK" data-day="${selectedDay}" data-label="${j.label}" class="add-regular-journey flex-1 regular-button bg-blue-100 text-blue-600 text-sm font-semibold py-2 rounded-lg hover:bg-blue-200">
+                                Add Bus (£${farePeak})
+                            </button>` 
+                            : 
+                            `<button data-route="${j.route}" data-time="PEAK" data-day="${selectedDay}" data-label="${j.label}" class="add-regular-journey flex-1 regular-button bg-red-100 text-red-600 text-sm font-semibold py-2 rounded-lg hover:bg-red-200">
+                                Peak (£${farePeak})
+                            </button>
+                            <button data-route="${j.route}" data-time="OFFPEAK" data-day="${selectedDay}" data-label="${j.label}" class="add-regular-journey flex-1 regular-button bg-green-100 text-green-600 text-sm font-semibold py-2 rounded-lg hover:bg-green-200">
+                                Off-Peak (£${fareOffPeak})
+                            </button>`
+                        }
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+            
+            document.querySelectorAll('.add-regular-journey').forEach(button => {
+                button.addEventListener('click', handleRegularJourneyAdd);
+            });
+        }
+
+        function renderJourneyLog() {
+            const logElement = document.getElementById('journey-log');
+            logElement.innerHTML = '';
+            const days = Object.keys(journeys);
+            
+            let cumulativeTube = 0;
+            let cumulativeBus = 0;
+            const weeklyTubeCap = CAPS.WEEKLY_CAP_ADULT;
+            
+            let journeysExist = false;
+
+            days.forEach(day => {
+                const dayJourneys = journeys[day];
+                if (dayJourneys.length === 0) return;
+
+                journeysExist = true;
+
+                const costs = calculateDailyCosts(day);
+                cumulativeTube += costs.tubeCapped;
+                cumulativeBus += costs.busCapped;
+
+                const dailyTotal = (costs.tubeCapped + costs.busCapped).toFixed(2);
+                
+                const isCapped = costs.tubeCapped < costs.tubeSum || costs.busCapped < costs.busSum;
+                let capIndicator = isCapped ? '<span class="text-xs text-red-600 ml-2 font-normal">(Daily Cap Applied)</span>' : '';
+                
+                let dayHtml = `
+                    <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-indigo-600 shadow-sm" id="log-${day}">
+                        <h3 class="font-bold text-gray-800 flex justify-between items-center">
+                            ${day} <span class="text-indigo-600">Daily Cost: £${dailyTotal} ${capIndicator}</span>
+                        </h3>
+                        <ul class="list-disc list-inside space-y-1 mt-2 text-sm">
+                            ${dayJourneys.map((j, index) => {
+                                let fare;
+                                let routeDesc;
+                                
+                                if (j.type === 'CUSTOM') {
+                                    fare = calculateCustomFare(parseInt(j.startZone), parseInt(j.endZone), j.time);
+                                    routeDesc = `Custom (Z${j.startZone} ↔ Z${j.endZone})`;
+                                } else {
+                                    fare = getFare(j.route, j.time);
+                                    routeDesc = j.label;
+                                }
+
+                                const displayFare = fare.toFixed(2);
+                                const timeClass = j.time === 'PEAK' ? 'peak-fare' : 'offpeak-fare';
+                                let timeDesc = j.time === 'PEAK' ? 'Peak' : 'Off-Peak';
+                                
+                                if (j.route === 'BUS') {
+                                    timeDesc = 'Anytime';
+                                }
+
+
+                                return `<li class="flex justify-between items-center group">
+                                            <span>${j.count}x ${routeDesc} (${timeDesc})</span>
+                                            <span><span class="${timeClass}">£${displayFare}</span> each</span>
+                                            <button data-day="${day}" data-index="${index}" class="remove-btn text-xs text-red-500 opacity-0 group-hover:opacity-100 transition duration-150">x</button>
+                                        </li>`;
+                            }).join('')}
+                        </ul>
+                    </div>
+                `;
+                logElement.innerHTML += dayHtml;
+            });
+            
+            if (!journeysExist) {
+                 logElement.innerHTML = '<p class="text-gray-500 text-center py-8">No journeys logged yet.</p>';
+            }
+
+            // Attach event listeners for remove buttons after rendering the list
+            document.querySelectorAll('.remove-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const day = e.target.getAttribute('data-day');
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    removeJourney(day, index);
+                });
+            });
+
+            const finalTubeCost = Math.min(cumulativeTube, weeklyTubeCap);
+            const paygTotal = finalTubeCost + cumulativeBus;
+            
+            updateSummary(paygTotal);
+        }
+
+        function updateSummary(paygTotal) {
+            const isStudentTravelcard = document.getElementById('student-discount-toggle').checked;
+            const standardTravelcardCost = CAPS.WEEKLY_CAP_ADULT;
+            let effectiveTravelcardCost = standardTravelcardCost;
+
+            if (isStudentTravelcard) {
+                effectiveTravelcardCost = CAPS.WEEKLY_CAP_STUDENT_DISCOUNTED; // £36.70
+                document.getElementById('travelcard-discount-label').textContent = "(30% Discounted)";
+            } else {
+                document.getElementById('travelcard-discount-label').textContent = "";
+            }
+
+            document.getElementById('payg-total').textContent = `£${paygTotal.toFixed(2)}`;
+            document.getElementById('travelcard-cost').textContent = `£${effectiveTravelcardCost.toFixed(2)}`;
+
+            const comparisonDiv = document.getElementById('comparison-result');
+            const paygCard = document.getElementById('payg-card');
+            const travelCard = document.getElementById('travelcard-card');
+
+            paygCard.classList.remove('comparison-card-winner', 'comparison-card-loser', 'border-dashed');
+            travelCard.classList.remove('comparison-card-winner', 'comparison-card-loser', 'border-dashed');
+            
+            const studentToggle = document.getElementById('student-discount-toggle');
+            const paygToggle = document.getElementById('railcard-payg-toggle');
+            const travelcardStatus = document.getElementById('travelcard-discount-status');
+            const paygStatus = document.getElementById('payg-discount-status');
+
+            const setStatus = (element, isActive) => {
+                element.textContent = isActive ? 'Active' : 'Off';
+                element.classList.toggle('text-green-600', isActive);
+                element.classList.toggle('text-red-600', !isActive);
+            };
+
+            setStatus(travelcardStatus, studentToggle.checked);
+            setStatus(paygStatus, paygToggle.checked);
+            
+            if (paygTotal > 0) {
+                if (paygTotal > effectiveTravelcardCost) {
+                    comparisonDiv.className = 'p-4 rounded-lg border-2 comparison-card-loser font-semibold transition duration-300';
+                    comparisonDiv.innerHTML = `<strong>GET THE PASS!</strong> <br> You spent £${(paygTotal - effectiveTravelcardCost).toFixed(2)} more.`;
+                    travelCard.classList.add('comparison-card-winner');
+                    paygCard.classList.add('comparison-card-loser');
+                } else if (paygTotal <= effectiveTravelcardCost) {
+                    comparisonDiv.className = 'p-4 rounded-lg border-2 comparison-card-winner font-semibold transition duration-300';
+                    comparisonDiv.innerHTML = `<strong>PAYG SAVES YOU MONEY!</strong> <br> You saved £${(effectiveTravelcardCost - paygTotal).toFixed(2)} compared to the pass.`;
+                    paygCard.classList.add('comparison-card-winner');
+                    travelCard.classList.add('comparison-card-loser');
+                }
+            } else {
+                comparisonDiv.className = 'p-4 rounded-lg border-2 border-gray-300 font-semibold transition duration-300';
+                comparisonDiv.textContent = 'Start tracking to compare costs!';
+                paygCard.classList.add('border-dashed');
+                travelCard.classList.add('border-dashed');
+            }
+        }
+
+        // --- EVENT HANDLERS ---
+        
+        function recalculateAndSave() {
+            renderRegularJourneys(); // Re-render to update button fares if discount toggles change
+            recalculateAll();
+            saveJourneys();
+        }
+
+        function recalculateAll() {
+            renderJourneyLog();
+        }
+        
+        function clearAllJourneys(confirm = true) {
+            if (confirm) {
+                // Reverting to native confirm, as previous custom modal caused issues in some environments.
+                const confirmation = window.confirm("Are you sure you want to clear ALL recorded journeys for this week?");
+                if (!confirmation) return;
+            }
+            
+            journeys = {
+                Monday: [], Tuesday: [], Wednesday: [], Thursday: [],
+                Friday: [], Saturday: [], Sunday: []
+            };
+            recalculateAndSave();
+        }
+        window.clearAllJourneys = clearAllJourneys; // Expose globally for inline onclick
+
+        function populateDayOptions(selectId) {
+            const daySelect = document.getElementById(selectId);
+            if (!daySelect) return; 
+
+            const days = Object.keys(journeys);
+            
+            // Clear existing options, but keep the placeholder
+            daySelect.innerHTML = '<option value="">-- Select Day --</option>';
+
+            days.forEach(day => {
+                const option = document.createElement('option');
+                option.value = day;
+                option.textContent = day;
+                daySelect.appendChild(option);
+            });
+            
+            // Auto-select the current day
+            const today = new Date().toLocaleDateString('en-GB', { weekday: 'long' });
+            const todayOption = document.querySelector(`#${selectId} option[value="${today}"]`);
+            if (todayOption) {
+                 todayOption.selected = true;
+            }
+        }
+
+        function handleRegularJourneyAdd(event) {
+            const selectedDay = document.getElementById('regular-day-input').value; // Get from the select box
+            
+            if (!selectedDay) {
+                alert("Please select a day for the regular journey."); // Using browser alert only for critical missing input
+                return;
+            }
+
+            const route = event.target.getAttribute('data-route');
+            let time = event.target.getAttribute('data-time');
+            const label = event.target.getAttribute('data-label');
+            
+            if (route === 'BUS') {
+                // Bus/Tram is always 'PEAK' or 'OFFPEAK' internally for fare lookup, but is always £1.75
+                time = 'PEAK'; 
+            }
+
+            journeys[selectedDay].push({ 
+                type: 'REGULAR',
+                route: route,
+                time: time,
+                count: 1, // Always 1 for quick add buttons
+                label: label
+            });
+
+            recalculateAndSave();
+        }
+
+        function handleCustomJourneyAdd(event) {
+            event.preventDefault();
+
+            const day = document.getElementById('custom-day-input').value;
+            const startZone = parseInt(document.getElementById('custom-start-zone').value);
+            const endZone = parseInt(document.getElementById('custom-end-zone').value);
+            const time = document.getElementById('custom-time-input').value;
+            const count = parseInt(document.getElementById('custom-count-input').value);
+            
+            if (!day || startZone < 1 || endZone < 1 || startZone > 9 || endZone > 9 || isNaN(count) || count < 1) {
+                 document.getElementById('custom-fare-guide').innerHTML = '<span class="text-red-600 font-bold">Error:</span> Please select a day, enter valid zones (1-9), and quantity.';
+                 return;
+            }
+
+            journeys[day].push({ 
+                type: 'CUSTOM',
+                startZone: startZone,
+                endZone: endZone,
+                route: startZone === endZone ? 'TUBE_Z_LOCAL' : 'TUBE_Z_CROSS',
+                time: time,
+                count: count
+            });
+
+            // Reset form fields
+            document.getElementById('custom-count-input').value = 1;
+            document.getElementById('custom-start-zone').value = '';
+            document.getElementById('custom-end-zone').value = '';
+            document.getElementById('custom-fare-guide').textContent = 'Enter zones to calculate the corresponding PAYG fare.';
+
+            recalculateAndSave();
+        }
+
+        function removeJourney(day, index) {
+            if (journeys[day] && journeys[day].length > index) {
+                journeys[day].splice(index, 1);
+                recalculateAndSave();
+            }
+        }
+        window.removeJourney = removeJourney; // Expose globally for use in renderJourneyLog()
+
+        function updateCustomFareGuide() {
+            const startZone = parseInt(document.getElementById('custom-start-zone').value);
+            const endZone = parseInt(document.getElementById('custom-end-zone').value);
+            const time = document.getElementById('custom-time-input').value;
+
+            const guideElement = document.getElementById('custom-fare-guide');
+            
+            if (startZone >= 1 && startZone <= 9 && endZone >= 1 && endZone <= 9) {
+                try {
+                    const fare = calculateCustomFare(startZone, endZone, time).toFixed(2);
+                    const timeDesc = time === 'PEAK' ? 'Peak' : 'Off-Peak';
+                    guideElement.innerHTML = `Estimated ${timeDesc} PAYG fare for Z${startZone} ↔ Z${endZone} is: <span class="font-bold text-indigo-600">£${fare}</span>`;
+                } catch (e) {
+                     guideElement.innerHTML = '<strong>Calculation Error:</strong> Check fare rules (defaulting to Z1-6 rates).';
+                }
+            } else {
+                 guideElement.textContent = 'Enter zones to calculate the corresponding PAYG fare.';
+            }
+        }
+
+
+        // --- INITIALIZATION ---
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Day Selectors
+            populateDayOptions('custom-day-input');
+            populateDayOptions('regular-day-input');
+            
+            // Custom Journey Listeners
+            document.getElementById('custom-journey-form').addEventListener('submit', handleCustomJourneyAdd);
+            document.getElementById('custom-start-zone').addEventListener('input', updateCustomFareGuide);
+            document.getElementById('custom-end-zone').addEventListener('input', updateCustomFareGuide);
+            document.getElementById('custom-time-input').addEventListener('change', updateCustomFareGuide);
+            
+            // Settings/Discount Listeners
+            document.getElementById('student-discount-toggle').addEventListener('change', recalculateAndSave);
+            document.getElementById('railcard-payg-toggle').addEventListener('change', recalculateAndSave);
+            
+            // Regular Journey Day Selector Listener
+            document.getElementById('regular-day-input').addEventListener('change', renderRegularJourneys);
+
+            // Start the initialization sequence (loads data, settings, and recalculates)
+            await initializeAppAndAuth();
+        });
+    </script>
+</html>
