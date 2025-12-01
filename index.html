@@ -170,8 +170,8 @@
                         </div>
                     </div>
                     
-                    <!-- Journey Management Buttons -->
-                    <div class="bg-white p-4 rounded-lg shadow-sm border space-y-3">
+                    <!-- Journey Management Buttons (FIXED PADDING HERE) -->
+                    <div class="bg-white p-3 rounded-lg shadow-sm border">
                          <button onclick="clearAllJourneys()" class="w-full bg-red-100 text-red-600 font-semibold py-2 rounded-lg hover:bg-red-200 transition duration-150 text-sm">
                             Clear All Journeys This Week
                         </button>
@@ -185,9 +185,8 @@
     </div>
 </body>
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // --- LOCAL STORAGE KEY ---
+        const STORAGE_KEY = 'tflWeeklyTrackerData';
         
         // Global store for journeys (Monday to Sunday)
         let journeys = {
@@ -195,68 +194,13 @@
             Friday: [], Saturday: [], Sunday: []
         };
         
-        // --- FIREBASE SETUP ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-
-        let db;
-        let auth;
-        let userId = null;
-        let currentWeekDocRef = null;
-
-        document.getElementById('loading-indicator').style.display = 'flex';
-        document.getElementById('app-content').style.display = 'none';
-
-        function getCurrentWeekDocRef(uid) {
-            // Private user data path for the current week
-            return doc(db, `artifacts/${appId}/users/${uid}/journey_tracker`, 'current_week');
-        }
-
-
-        async function initializeAppAndAuth() {
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                const authPromise = new Promise(resolve => {
-                    onAuthStateChanged(auth, async (user) => {
-                        if (user) {
-                            userId = user.uid;
-                            currentWeekDocRef = getCurrentWeekDocRef(userId);
-                            await loadData();
-                        } else {
-                            try {
-                                if (typeof __initial_auth_token !== 'undefined') {
-                                    await signInWithCustomToken(auth, __initial_auth_token);
-                                } else {
-                                    await signInAnonymously(auth);
-                                }
-                            } catch (e) {
-                                console.error("Firebase sign-in failed:", e);
-                            }
-                        }
-                        resolve();
-                    });
-                });
-                await authPromise;
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                document.getElementById('loading-indicator').style.display = 'none';
-                document.getElementById('app-content').style.display = 'block';
-            }
-        }
-
         // --- DATA MANAGEMENT ---
 
-        async function loadData() {
-            if (!currentWeekDocRef) return;
-            
+        function loadData() {
             try {
-                // 1. Load Current Week Data
-                const currentWeekSnap = await getDoc(currentWeekDocRef);
-                if (currentWeekSnap.exists()) {
-                    const savedData = currentWeekSnap.data();
+                const storedData = localStorage.getItem(STORAGE_KEY);
+                if (storedData) {
+                    const savedData = JSON.parse(storedData);
                     
                     if (savedData.journeys) {
                         for (const day in journeys) {
@@ -274,7 +218,7 @@
                     }
                 }
             } catch (e) {
-                console.error("Error loading data from Firestore:", e);
+                console.error("Error loading data from Local Storage:", e);
             } finally {
                 recalculateAll(); 
                 document.getElementById('loading-indicator').style.display = 'none';
@@ -282,8 +226,7 @@
             }
         }
         
-        async function saveJourneys() {
-            if (!currentWeekDocRef) return;
+        function saveJourneys() {
             const dataToSave = {
                 journeys: journeys,
                 studentDiscount: document.getElementById('student-discount-toggle').checked,
@@ -291,9 +234,9 @@
                 lastUpdated: new Date()
             };
             try {
-                await setDoc(currentWeekDocRef, dataToSave);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
             } catch (e) {
-                console.error("Error saving current week to Firestore:", e);
+                console.error("Error saving data to Local Storage:", e);
             }
         }
 
@@ -441,7 +384,7 @@
             const container = document.getElementById('regular-journeys-container');
             container.innerHTML = '';
 
-            // Get selected day from the new dropdown
+            // Use the currently selected value in the day input
             const selectedDay = document.getElementById('regular-day-input').value;
             
             regularJourneys.forEach(j => {
@@ -631,7 +574,7 @@
         
         function clearAllJourneys(confirm = true) {
             if (confirm) {
-                // Reverting to native confirm, as previous custom modal caused issues in some environments.
+                // Using native confirm for simplicity
                 const confirmation = window.confirm("Are you sure you want to clear ALL recorded journeys for this week?");
                 if (!confirmation) return;
             }
@@ -666,6 +609,9 @@
             if (todayOption) {
                  todayOption.selected = true;
             }
+            
+            // Return true if today was selected for initialization check
+            return !!todayOption;
         }
 
         function handleRegularJourneyAdd(event) {
@@ -762,7 +708,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             // Day Selectors
             populateDayOptions('custom-day-input');
-            populateDayOptions('regular-day-input');
+            const regularDayInitialized = populateDayOptions('regular-day-input');
             
             // Custom Journey Listeners
             document.getElementById('custom-journey-form').addEventListener('submit', handleCustomJourneyAdd);
@@ -778,7 +724,12 @@
             document.getElementById('regular-day-input').addEventListener('change', renderRegularJourneys);
 
             // Start the initialization sequence (loads data, settings, and recalculates)
-            await initializeAppAndAuth();
+            loadData();
+            
+            // FIX: If the day selection was successful (auto-selected today), render the regular buttons immediately
+            if (regularDayInitialized) {
+                renderRegularJourneys();
+            }
         });
     </script>
 </html>
