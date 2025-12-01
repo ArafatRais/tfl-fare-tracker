@@ -172,23 +172,14 @@
                     
                     <!-- Journey Management Buttons -->
                     <div class="bg-white p-4 rounded-lg shadow-sm border space-y-3">
-                         <button onclick="saveWeekAndReset()" class="w-full bg-indigo-600 text-white font-semibold py-2 rounded-lg hover:bg-indigo-700 transition duration-150 text-sm">
-                            Save Week & Start New Log
-                        </button>
-                        <button onclick="clearAllJourneys()" class="w-full bg-red-100 text-red-600 font-semibold py-2 rounded-lg hover:bg-red-200 transition duration-150 text-sm">
+                         <button onclick="clearAllJourneys()" class="w-full bg-red-100 text-red-600 font-semibold py-2 rounded-lg hover:bg-red-200 transition duration-150 text-sm">
                             Clear All Journeys This Week
                         </button>
                     </div>
                 </div>
             </div>
-
-            <!-- 6. HISTORY SECTION -->
-            <div class="mt-8 p-6 border-t-2 border-gray-300">
-                <h2 class="text-xl font-bold text-gray-700 mb-3">Weekly Cost History</h2>
-                <div id="history-log" class="space-y-3">
-                    <p class="text-gray-500 text-sm text-center">No past weeks saved yet.</p>
-                </div>
-            </div>
+            
+            <!-- Removed HISTORY SECTION -->
 
         </div>
     </div>
@@ -196,7 +187,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, collection, query, getDocs, updateDoc, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Global store for journeys (Monday to Sunday)
         let journeys = {
@@ -212,7 +203,6 @@
         let auth;
         let userId = null;
         let currentWeekDocRef = null;
-        let historyDocRef = null; // Document to store history array
 
         document.getElementById('loading-indicator').style.display = 'flex';
         document.getElementById('app-content').style.display = 'none';
@@ -220,11 +210,6 @@
         function getCurrentWeekDocRef(uid) {
             // Private user data path for the current week
             return doc(db, `artifacts/${appId}/users/${uid}/journey_tracker`, 'current_week');
-        }
-
-        function getHistoryDocRef(uid) {
-            // Private user data path for the history array
-            return doc(db, `artifacts/${appId}/users/${uid}/journey_tracker`, 'weekly_history');
         }
 
 
@@ -239,7 +224,6 @@
                         if (user) {
                             userId = user.uid;
                             currentWeekDocRef = getCurrentWeekDocRef(userId);
-                            historyDocRef = getHistoryDocRef(userId);
                             await loadData();
                         } else {
                             try {
@@ -289,10 +273,6 @@
                         document.getElementById('railcard-payg-toggle').checked = savedData.railcardPayg;
                     }
                 }
-
-                // 2. Load History Data (synchronous read)
-                await renderHistory();
-
             } catch (e) {
                 console.error("Error loading data from Firestore:", e);
             } finally {
@@ -317,98 +297,7 @@
             }
         }
 
-        // --- HISTORY MANAGEMENT ---
-
-        async function renderHistory() {
-             const historyElement = document.getElementById('history-log');
-             historyElement.innerHTML = '';
-
-             const historySnap = await getDoc(historyDocRef);
-             let historyData = [];
-
-             if (historySnap.exists() && historySnap.data().history) {
-                 // Sort history by date descending
-                 historyData = historySnap.data().history.sort((a, b) => b.savedDate.toDate() - a.savedDate.toDate());
-             }
-
-             if (historyData.length === 0) {
-                 historyElement.innerHTML = '<p class="text-gray-500 text-sm text-center">No past weeks saved yet.</p>';
-                 return;
-             }
-
-             historyData.forEach(week => {
-                 const date = week.savedDate.toDate().toLocaleDateString();
-                 const winnerClass = week.paygTotal <= week.travelcardCost ? 'text-green-600' : 'text-red-600';
-                 const winnerLabel = week.paygTotal <= week.travelcardCost ? 'PAYG WON' : 'PASS WON';
-                 const discountText = week.isStudentTravelcard ? ' (Student Pass)' : '';
-
-                 const historyItem = document.createElement('div');
-                 historyItem.className = 'flex justify-between items-center p-3 bg-white border rounded-lg shadow-sm';
-                 historyItem.innerHTML = `
-                     <span class="text-sm font-medium text-gray-700">Week saved: ${date}${discountText}</span>
-                     <div class="text-right">
-                         <span class="text-xs font-semibold mr-2 ${winnerClass}">${winnerLabel}</span>
-                         <span class="text-sm font-bold text-gray-800">£${week.paygTotal.toFixed(2)} / £${week.travelcardCost.toFixed(2)}</span>
-                     </div>
-                 `;
-                 historyElement.appendChild(historyItem);
-             });
-        }
-
-        async function saveWeekAndReset() {
-            const isStudentTravelcard = document.getElementById('student-discount-toggle').checked;
-            const standardTravelcardCost = CAPS.WEEKLY_CAP_ADULT;
-            const effectiveTravelcardCost = isStudentTravelcard ? CAPS.WEEKLY_CAP_STUDENT_DISCOUNTED : standardTravelcardCost;
-
-            let currentTotal = 0;
-            const weeklyTubeCap = CAPS.WEEKLY_CAP_ADULT;
-            let cumulativeTube = 0;
-            let cumulativeBus = 0;
-
-            // 1. Calculate the final current week total
-            Object.keys(journeys).forEach(day => {
-                const costs = calculateDailyCosts(day);
-                cumulativeTube += costs.tubeCapped;
-                cumulativeBus += costs.busCapped;
-            });
-            
-            currentTotal = Math.min(cumulativeTube, weeklyTubeCap) + cumulativeBus;
-            
-            if (currentTotal === 0) {
-                 alert("Cannot save an empty week. Please log some journeys first.");
-                 return;
-            }
-
-            // Using window.confirm for simplicity since the last attempt with a custom modal was complex
-            const confirmation = window.confirm(`Save this week's total of £${currentTotal.toFixed(2)} to history and clear the current log?`);
-            if (!confirmation) return;
-
-            // 2. Prepare history entry
-            const historyEntry = {
-                savedDate: new Date(),
-                paygTotal: currentTotal,
-                travelcardCost: effectiveTravelcardCost,
-                isStudentTravelcard: isStudentTravelcard
-            };
-
-            try {
-                // 3. Save to history array (create doc if it doesn't exist)
-                await setDoc(historyDocRef, { history: arrayUnion(historyEntry) }, { merge: true });
-
-                // 4. Reset current week log
-                clearAllJourneys(false); // Clear locally without confirmation
-                await saveJourneys(); // Save empty log
-                
-                // 5. Re-render history and UI
-                await renderHistory();
-                recalculateAll();
-
-            } catch (e) {
-                console.error("Error saving weekly history:", e);
-                alert("Failed to save history. Check console for details.");
-            }
-        }
-        window.saveWeekAndReset = saveWeekAndReset; // Expose globally for inline onclick
+        // --- CORE FARE CALCULATION LOGIC ---
 
         // --- FARE CONSTANTS (Comprehensive March 2025 PAYG Rates) ---
         // Key format: 'Z_minZone_maxZone' or 'Z1_maxZone'
@@ -451,8 +340,6 @@
             WEEKLY_CAP_ADULT: 52.50,
             WEEKLY_CAP_STUDENT_DISCOUNTED: 36.70, 
         };
-
-        // --- CORE FARE CALCULATION LOGIC ---
 
         function getFare(route, time) {
             // This function is for the quick-add buttons which are hardcoded Z1-3 scenarios
